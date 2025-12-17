@@ -13,6 +13,8 @@ import {
   FiCheck,
   FiAlertCircle,
   FiLoader,
+  FiMail,
+  FiX,
 } from 'react-icons/fi'
 
 // Type definitions
@@ -52,6 +54,10 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState<CalculationResult | null>(null)
   const [copied, setCopied] = useState(false)
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [emailAddress, setEmailAddress] = useState('')
+  const [isSendingEmail, setIsSendingEmail] = useState(false)
+  const [emailStatus, setEmailStatus] = useState<{ success: boolean; message: string } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Auto-expand textarea
@@ -115,6 +121,93 @@ export default function HomePage() {
   const handleExportPDF = () => {
     if (!results) return
     alert('PDF export feature coming soon')
+  }
+
+  const handleSendEmail = async () => {
+    if (!emailAddress.trim()) {
+      setEmailStatus({ success: false, message: 'Please enter an email address' })
+      return
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(emailAddress)) {
+      setEmailStatus({ success: false, message: 'Please enter a valid email address' })
+      return
+    }
+
+    if (!results) return
+
+    setIsSendingEmail(true)
+    setEmailStatus(null)
+
+    try {
+      const monthlyTotal = results.cost_breakdown.total_monthly
+      const annualTotal = monthlyTotal * 12
+
+      const emailBody = `
+Dear User,
+
+Here is your Lyzr Credit Calculator Cost Estimate:
+
+ARCHITECTURE OVERVIEW:
+- Agents Required: ${results.agents_count}
+- Knowledge Bases: ${results.knowledge_bases_count}
+- Integration Tools: ${results.tools_required}
+- Memory Requirements: ${results.memory_requirements}
+- RAI Requirements: ${results.rai_requirements}
+
+COST BREAKDOWN:
+- Creation Costs: $${results.cost_breakdown.creation_costs.toFixed(2)}
+- Retrieval Costs: $${results.cost_breakdown.retrieval_costs.toFixed(2)}
+- Model Costs: $${results.cost_breakdown.model_costs.toFixed(2)}
+
+MONTHLY TOTAL: $${monthlyTotal.toFixed(2)}
+ANNUAL PROJECTION: $${annualTotal.toFixed(2)}
+
+INPUT PARAMETERS:
+- Problem Statement: ${problemStatement}
+- Sessions per Month: ${sessionsPerMonth.toLocaleString()}
+- Queries per Session: ${queriesPerSession}
+- Model Type: ${modelType}
+- Average Input Tokens: ${avgInputTokens}
+- Average Output Tokens: ${avgOutputTokens}
+
+Best regards,
+Lyzr Credit Calculator
+`
+
+      const response = await fetch('/api/gmail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentId: '694263a24f5531c6f3c7055a',
+          recipientEmail: emailAddress,
+          subjectLine: 'Your Lyzr Credit Calculator Estimate',
+          bodyContent: emailBody,
+          calculationData: results,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setEmailStatus({ success: true, message: `Email sent successfully to ${emailAddress}` })
+        setEmailAddress('')
+        setTimeout(() => {
+          setShowEmailModal(false)
+          setEmailStatus(null)
+        }, 2000)
+      } else {
+        setEmailStatus({ success: false, message: data.error || 'Failed to send email' })
+      }
+    } catch (error) {
+      setEmailStatus({
+        success: false,
+        message: error instanceof Error ? error.message : 'Error sending email',
+      })
+    } finally {
+      setIsSendingEmail(false)
+    }
   }
 
   const monthlyTotal = results?.cost_breakdown.total_monthly ?? 0
@@ -414,6 +507,13 @@ export default function HomePage() {
                       </>
                     )}
                   </button>
+                  <button
+                    onClick={() => setShowEmailModal(true)}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  >
+                    <FiMail />
+                    Send Email
+                  </button>
                 </div>
               </>
             ) : (
@@ -429,6 +529,90 @@ export default function HomePage() {
           </div>
         </div>
       </main>
+
+      {/* Email Modal */}
+      {showEmailModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
+              <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                <FiMail />
+                Send Results via Email
+              </h2>
+              <button
+                onClick={() => {
+                  setShowEmailModal(false)
+                  setEmailStatus(null)
+                }}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <FiX size={24} />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={emailAddress}
+                  onChange={(e) => {
+                    setEmailAddress(e.target.value)
+                    setEmailStatus(null)
+                  }}
+                  placeholder="your.email@example.com"
+                  disabled={isSendingEmail}
+                  className="w-full px-4 py-2 bg-slate-700 text-white placeholder-slate-500 rounded-lg border border-slate-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none disabled:opacity-50"
+                />
+              </div>
+
+              {emailStatus && (
+                <div
+                  className={`p-3 rounded-lg text-sm ${
+                    emailStatus.success
+                      ? 'bg-green-500/20 border border-green-500/50 text-green-400'
+                      : 'bg-red-500/20 border border-red-500/50 text-red-400'
+                  }`}
+                >
+                  {emailStatus.message}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setShowEmailModal(false)
+                    setEmailStatus(null)
+                  }}
+                  disabled={isSendingEmail}
+                  className="flex-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white font-semibold py-2 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendEmail}
+                  disabled={isSendingEmail || !emailAddress.trim()}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  {isSendingEmail ? (
+                    <>
+                      <FiLoader className="animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <FiMail />
+                      Send
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
