@@ -83,6 +83,13 @@ export default function HomePage() {
         }),
       })
 
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('API Error:', response.status, errorText)
+        alert(`Error: ${response.status} - ${errorText}`)
+        return
+      }
+
       const data: ApiResponse = await response.json()
 
       if (data.success && data.data) {
@@ -91,6 +98,7 @@ export default function HomePage() {
         alert('Error calculating credits: ' + (data.error || 'Unknown error'))
       }
     } catch (error) {
+      console.error('Fetch error:', error)
       alert('Error calculating credits: ' + (error instanceof Error ? error.message : 'Unknown error'))
     } finally {
       setIsLoading(false)

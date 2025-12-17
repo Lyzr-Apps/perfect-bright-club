@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 const AGENT_ID = '694263a24f5531c6f3c7055a'
+const LYZR_API_URL = 'https://agent-prod.studio.lyzr.ai/v3/inference/chat/'
+const LYZR_API_KEY = process.env.LYZR_API_KEY
 
 interface CalculateRequest {
   problemStatement: string
@@ -101,6 +103,7 @@ function parseAgentResponse(rawResponse: string): CalculationResult {
 export async function POST(request: NextRequest) {
   try {
     const body: CalculateRequest = await request.json()
+    console.log('Received calculation request:', body)
 
     // Validate input
     if (!body.problemStatement || !body.problemStatement.trim()) {
@@ -124,44 +127,55 @@ Usage Parameters:
 - Average Input Tokens per Query: ${body.avgInputTokens}
 - Average Output Tokens per Response: ${body.avgOutputTokens}
 
-Please provide:
+Respond with a clear analysis including:
 1. Estimated number of agents needed
 2. Number of knowledge bases required
 3. Tools and integrations needed
-4. Memory requirements (in GB)
-5. RAI (Responsible AI) requirements level
-6. Cost breakdown (creation, retrieval, model costs)
-7. Architecture description
+4. Memory requirements
+5. RAI requirements level
 
-Format your response with clear sections for each component.
+Format your response clearly with these sections.
 `
-
-    // Call the agent API
-    const agentResponse = await fetch('https://api.lyzr.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.LYZR_API_KEY || 'demo-key'}`,
-      },
-      body: JSON.stringify({
-        agent_id: AGENT_ID,
-        message: message,
-        user_id: 'calculator-user',
-      }),
-    })
 
     let rawResponse = ''
 
-    if (agentResponse.ok) {
-      const agentData = await agentResponse.json()
-      rawResponse = agentData.response || agentData.message || JSON.stringify(agentData)
+    // Try to call Lyzr API if key is available
+    if (LYZR_API_KEY) {
+      try {
+        const agentResponse = await fetch(LYZR_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': LYZR_API_KEY,
+          },
+          body: JSON.stringify({
+            user_id: `calculator-${Date.now()}`,
+            agent_id: AGENT_ID,
+            session_id: `session-${Date.now()}`,
+            message: message,
+          }),
+        })
+
+        if (agentResponse.ok) {
+          const agentData = await agentResponse.json()
+          rawResponse = agentData.response || agentData.message || JSON.stringify(agentData)
+          console.log('Agent API response received')
+        } else {
+          console.log('Agent API returned', agentResponse.status, 'using fallback')
+          rawResponse = generateDefaultResponse(body)
+        }
+      } catch (apiError) {
+        console.error('Agent API error:', apiError)
+        rawResponse = generateDefaultResponse(body)
+      }
     } else {
-      // If agent API fails, generate response based on heuristics
+      console.log('No LYZR_API_KEY configured, using fallback')
       rawResponse = generateDefaultResponse(body)
     }
 
     // Parse the response and extract structured data
     const calculationResult = parseAgentResponse(rawResponse)
+    console.log('Parsed result:', calculationResult)
 
     // Override with actual parameter values for accurate cost calculation
     const modelPricing: { [key: string]: { input: number; output: number } } = {
