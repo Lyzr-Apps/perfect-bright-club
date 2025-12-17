@@ -135,58 +135,36 @@ export default function HomePage() {
       return
     }
 
-    if (!results) return
+    if (!problemStatement.trim()) {
+      setEmailStatus({ success: false, message: 'Please generate a calculation first' })
+      return
+    }
 
     setIsSendingEmail(true)
     setEmailStatus(null)
 
     try {
-      const monthlyTotal = results.cost_breakdown.total_monthly
-      const annualTotal = monthlyTotal * 12
-
-      const emailBody = `
-Dear User,
-
-Here is your Lyzr Credit Calculator Cost Estimate:
-
-ARCHITECTURE OVERVIEW:
-- Agents Required: ${results.agents_count}
-- Knowledge Bases: ${results.knowledge_bases_count}
-- Integration Tools: ${results.tools_required}
-- Memory Requirements: ${results.memory_requirements}
-- RAI Requirements: ${results.rai_requirements}
-
-COST BREAKDOWN:
-- Creation Costs: $${results.cost_breakdown.creation_costs.toFixed(2)}
-- Retrieval Costs: $${results.cost_breakdown.retrieval_costs.toFixed(2)}
-- Model Costs: $${results.cost_breakdown.model_costs.toFixed(2)}
-
-MONTHLY TOTAL: $${monthlyTotal.toFixed(2)}
-ANNUAL PROJECTION: $${annualTotal.toFixed(2)}
-
-INPUT PARAMETERS:
-- Problem Statement: ${problemStatement}
-- Sessions per Month: ${sessionsPerMonth.toLocaleString()}
-- Queries per Session: ${queriesPerSession}
-- Model Type: ${modelType}
-- Average Input Tokens: ${avgInputTokens}
-- Average Output Tokens: ${avgOutputTokens}
-
-Best regards,
-Lyzr Credit Calculator
-`
-
-      const response = await fetch('/api/gmail', {
+      const response = await fetch('/api/calculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          agentId: '694263a24f5531c6f3c7055a',
+          problemStatement,
+          sessionsPerMonth,
+          queriesPerSession,
+          modelType,
+          avgInputTokens,
+          avgOutputTokens,
+          sendEmail: true,
           recipientEmail: emailAddress,
-          subjectLine: 'Your Lyzr Credit Calculator Estimate',
-          bodyContent: emailBody,
-          calculationData: results,
         }),
       })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('API Error:', response.status, errorText)
+        setEmailStatus({ success: false, message: `Error: ${response.status}` })
+        return
+      }
 
       const data = await response.json()
 

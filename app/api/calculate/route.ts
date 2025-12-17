@@ -11,6 +11,8 @@ interface CalculateRequest {
   modelType: string
   avgInputTokens: number
   avgOutputTokens: number
+  sendEmail?: boolean
+  recipientEmail?: string
 }
 
 interface CalculationResult {
@@ -114,7 +116,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Build the message for the agent
-    const message = `
+    let message = `
 You are a credit calculator coordinator for a Lyzr AI application system.
 Based on the following problem statement and usage parameters, estimate the required architecture components and costs.
 
@@ -136,6 +138,21 @@ Respond with a clear analysis including:
 
 Format your response clearly with these sections.
 `
+
+    // If email sending is requested, add instruction to agent
+    if (body.sendEmail && body.recipientEmail) {
+      message += `
+
+IMPORTANT: After providing the analysis, please use the Gmail tool to send an email to: ${body.recipientEmail}
+
+Email Details:
+- Subject: "Your Lyzr Credit Calculator Estimate"
+- Include all the analysis details above in the email body
+- Format it professionally with clear sections
+- Add the cost breakdown and monthly/annual projections
+
+Please send this email using the Gmail tool and confirm when sent.`
+    }
 
     let rawResponse = ''
 
