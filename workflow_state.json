@@ -1,0 +1,27 @@
+{
+  "workflow_created": true,
+  "agents_created": true,
+  "total_agents": 1,
+  "agent_ids": {
+    "knowledge_search_agent": "69735b7e1b6268d7b9512d01"
+  },
+  "knowledge_bases": {
+    "pdf_documents_kb": {
+      "rag_id": "69735b69115a3970d17427d5",
+      "rag_name": "pdfdocumentsknowledgebasehgan",
+      "linked_to_agent": "69735b7e1b6268d7b9512d01"
+    }
+  },
+  "response_schemas_saved": true,
+  "schema_files": [
+    "response_schemas/knowledge_search_agent_response.json"
+  ],
+  "workflow_type": "single_agent_with_rag",
+  "status": "complete",
+  "next_steps": [
+    "UI will provide PDF upload interface",
+    "Users can upload PDFs to Knowledge Base",
+    "Chat interface triggers agent with 'Search' button or Enter key",
+    "Agent returns JSON with answer, citations, confidence, and follow-up suggestions"
+  ]
+}

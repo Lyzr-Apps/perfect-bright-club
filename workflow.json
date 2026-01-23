@@ -1,0 +1,84 @@
+{
+  "workflow_name": "Knowledge Search Agent System",
+  "description": "Single-agent RAG system for searching PDF documents and providing contextual answers with citations",
+  "workflow_type": "single_agent",
+  "nodes": [
+    {
+      "id": "user_input",
+      "type": "Input",
+      "label": "User Query",
+      "nodeCategory": "input",
+      "position": {
+        "x": 100,
+        "y": 200
+      }
+    },
+    {
+      "id": "knowledge_search_agent",
+      "type": "Agent",
+      "label": "Knowledge Search Agent",
+      "nodeCategory": "agent",
+      "agent_id": "69735b7e1b6268d7b9512d01",
+      "agent_name": "Knowledge Search Agent",
+      "position": {
+        "x": 400,
+        "y": 200
+      }
+    },
+    {
+      "id": "response_output",
+      "type": "Output",
+      "label": "Answer with Citations",
+      "nodeCategory": "end",
+      "position": {
+        "x": 700,
+        "y": 200
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "user_input",
+      "target": "knowledge_search_agent"
+    },
+    {
+      "source": "knowledge_search_agent",
+      "target": "response_output"
+    }
+  ],
+  "agents": [
+    {
+      "agent_id": "69735b7e1b6268d7b9512d01",
+      "name": "Knowledge Search Agent",
+      "type": "single",
+      "description": "Searches through uploaded PDF documents using RAG to provide accurate, contextual answers with source citations. Handles follow-up questions and maintains conversation context for multi-turn queries.",
+      "role": "Knowledge Base Search Specialist",
+      "goal": "Search through uploaded PDF documents using RAG to provide accurate, contextual answers with source citations and handle multi-turn conversations",
+      "provider": "OpenAI",
+      "model": "gpt-4.1",
+      "temperature": 0.3,
+      "top_p": 1,
+      "has_knowledge_base": true,
+      "rag_id": "69735b69115a3970d17427d5",
+      "rag_name": "pdfdocumentsknowledgebasehgan",
+      "features": [
+        "KNOWLEDGE_BASE",
+        "MEMORY"
+      ],
+      "response_schema_file": "response_schemas/knowledge_search_agent_response.json"
+    }
+  ],
+  "knowledge_bases": [
+    {
+      "rag_id": "69735b69115a3970d17427d5",
+      "rag_name": "pdfdocumentsknowledgebasehgan",
+      "name": "PDF Documents Knowledge Base",
+      "description": "Knowledge base for storing and retrieving information from uploaded PDF documents with RAG capabilities",
+      "linked_agents": [
+        "69735b7e1b6268d7b9512d01"
+      ]
+    }
+  ],
+  "created_at": "2026-01-23T00:00:00Z",
+  "updated_at": "2026-01-23T00:00:00Z"
+}

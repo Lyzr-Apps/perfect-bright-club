@@ -1,0 +1,32 @@
+{
+  "agent_name": "Knowledge Search Agent",
+  "agent_id": "69735b7e1b6268d7b9512d01",
+  "test_message": "What are the key findings about AI agents and multi-agent systems?",
+  "expected_purpose": "research",
+  "timestamp": "2026-01-23T11:30:02.069368",
+  "is_valid_json": true,
+  "validation_errors": [],
+  "actual_response": {
+    "status": "error",
+    "result": {
+      "answer": "I'm unable to find information regarding key findings about AI agents and multi-agent systems in the uploaded knowledge base documents. If you have a specific document or additional information, please upload or specify it for a more accurate search.",
+      "sources": [],
+      "confidence": 0.0,
+      "related_topics": [
+        "AI agent architectures",
+        "collaborative agents",
+        "distributed artificial intelligence"
+      ],
+      "follow_up_suggestions": [
+        "Could you provide a specific document or section?",
+        "Are there particular aspects of multi-agent systems you're interested in?"
+      ]
+    },
+    "metadata": {
+      "agent_name": "Knowledge Search Agent",
+      "timestamp": "2024-06-13T16:36:15Z",
+      "documents_searched": "0"
+    }
+  },
+  "raw_response": "{\n  \"status\": \"error\",\n  \"result\": {\n    \"answer\": \"I'm unable to find information regarding key findings about AI agents and multi-agent systems in the uploaded knowledge base documents. If you have a specific document or additional information, please upload or specify it for a more accurate search.\",\n    \"sources\": [],\n    \"confidence\": 0.0,\n    \"related_topics\": [\"AI agent architectures\", \"collaborative agents\", \"distributed artificial intelligence\"],\n    \"follow_up_suggestions\": [\"Could you provide a specific document or section?\", \"Are there particular aspects of multi-agent systems you're interested in?\"]\n  },\n  \"metadata\": {\n    \"agent_name\": \"Knowledge Search Agent\",\n    \"timestamp\": \"2024-06-13T16:36:15Z\",\n    \"documents_searched\": \"0\"\n  }\n}"
+}

@@ -1,0 +1,66 @@
+{
+  "agent_name": "Knowledge Search Agent",
+  "agent_id": "69735b7e1b6268d7b9512d01",
+  "agent_purpose": "research",
+  "description": "RAG-powered knowledge search agent that retrieves answers from PDF documents with citations, confidence scores, related topics, and follow-up suggestions",
+  "response_schema": {
+    "status": "string",
+    "result": {
+      "answer": "string",
+      "sources": [
+        "any"
+      ],
+      "confidence": "number",
+      "related_topics": [
+        "any"
+      ],
+      "follow_up_suggestions": [
+        "string"
+      ]
+    },
+    "metadata": {
+      "agent_name": "string",
+      "timestamp": "string",
+      "documents_searched": "string"
+    }
+  },
+  "example_response": {
+    "status": "error",
+    "result": {
+      "answer": "No document information is currently available in the knowledge base to research a sample topic for testing.",
+      "sources": [],
+      "confidence": 0.0,
+      "related_topics": [],
+      "follow_up_suggestions": [
+        "Can you upload a document to enable searching?",
+        "Would you like to specify a particular topic or document?"
+      ]
+    },
+    "metadata": {
+      "agent_name": "Knowledge Search Agent",
+      "timestamp": "2024-06-13T17:13:08Z",
+      "documents_searched": "0"
+    }
+  },
+  "is_actual_tested": true,
+  "test_timestamp": "2026-01-23T11:30:12.843216",
+  "test_message_used": "Research a sample topic for testing",
+  "actual_test_response": {
+    "status": "error",
+    "result": {
+      "answer": "No document information is currently available in the knowledge base to research a sample topic for testing.",
+      "sources": [],
+      "confidence": 0.0,
+      "related_topics": [],
+      "follow_up_suggestions": [
+        "Can you upload a document to enable searching?",
+        "Would you like to specify a particular topic or document?"
+      ]
+    },
+    "metadata": {
+      "agent_name": "Knowledge Search Agent",
+      "timestamp": "2024-06-13T17:13:08Z",
+      "documents_searched": "0"
+    }
+  }
+}

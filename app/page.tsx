@@ -2,717 +2,958 @@
 
 import { useState, useRef, useEffect } from 'react'
 import {
-  FiChevronDown,
-  FiChevronUp,
-  FiZap,
-  FiDatabase,
-  FiTool,
-  FiCpu,
-  FiDownload,
-  FiCopy,
-  FiCheck,
-  FiAlertCircle,
-  FiLoader,
-  FiMail,
-  FiX,
-} from 'react-icons/fi'
+  Search,
+  Send,
+  FileText,
+  Upload,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  Moon,
+  Sun,
+  MessageSquare,
+  Loader2,
+  ThumbsUp,
+  ThumbsDown,
+  Copy,
+  Check,
+  Plus,
+  Settings,
+  X,
+  File,
+  AlertCircle,
+  BookOpen,
+  Sparkles,
+  Database,
+} from 'lucide-react'
+import { callAIAgent } from '@/utils/aiAgent'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
+import { Progress } from '@/components/ui/progress'
+import { cn } from '@/lib/utils'
 
-// Type definitions
-interface CalculationResult {
-  agents_count: number
-  knowledge_bases_count: number
-  tools_required: number
-  memory_requirements: string
-  rai_requirements: string
-  cost_breakdown: {
-    creation_costs: number
-    retrieval_costs: number
-    model_costs: number
-    total_monthly: number
+// Agent and RAG configuration
+const AGENT_ID = '69735b7e1b6268d7b9512d01'
+const RAG_ID = '69735b69115a3970d17427d5'
+
+// TypeScript interfaces from actual response schema
+interface Source {
+  document?: string
+  page?: number
+  excerpt?: string
+  [key: string]: any
+}
+
+interface AgentResult {
+  answer: string
+  sources: Source[]
+  confidence: number
+  related_topics: any[]
+  follow_up_suggestions: string[]
+}
+
+interface AgentResponse {
+  status: string
+  result: AgentResult
+  metadata?: {
+    agent_name?: string
+    timestamp?: string
+    documents_searched?: string
   }
-  architecture_description: string
 }
 
-interface ApiResponse {
-  success: boolean
-  data?: CalculationResult
-  error?: string
-  raw_response?: string
+interface Message {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: Date
+  response?: AgentResult
+  isError?: boolean
 }
 
-// Main Page Component
-export default function HomePage() {
-  const [problemStatement, setProblemStatement] = useState(
-    'Customer support chatbot with FAQ knowledge base'
-  )
-  const [sessionsPerMonth, setSessionsPerMonth] = useState(1000)
-  const [queriesPerSession, setQueriesPerSession] = useState(5)
-  const [modelType, setModelType] = useState('GPT-4.1')
-  const [avgInputTokens, setAvgInputTokens] = useState(500)
-  const [avgOutputTokens, setAvgOutputTokens] = useState(1000)
-  const [isCollapsed, setIsCollapsed] = useState(false)
+interface Conversation {
+  id: string
+  title: string
+  messages: Message[]
+  createdAt: Date
+  updatedAt: Date
+}
+
+interface UploadedDocument {
+  id: string
+  name: string
+  uploadDate: Date
+  pageCount?: number
+  status: 'indexed' | 'processing' | 'failed'
+  size?: number
+}
+
+// Main page component
+export default function KnowledgeSearchPage() {
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [showKnowledgePanel, setShowKnowledgePanel] = useState(false)
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
+  const [inputMessage, setInputMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [results, setResults] = useState<CalculationResult | null>(null)
-  const [copied, setCopied] = useState(false)
-  const [showEmailModal, setShowEmailModal] = useState(false)
-  const [emailAddress, setEmailAddress] = useState('')
-  const [isSendingEmail, setIsSendingEmail] = useState(false)
-  const [emailStatus, setEmailStatus] = useState<{ success: boolean; message: string } | null>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [showSources, setShowSources] = useState(true)
+  const [documents, setDocuments] = useState<UploadedDocument[]>([])
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  // Auto-expand textarea
+  const currentConversation = conversations.find(c => c.id === currentConversationId)
+
+  // Auto-scroll to bottom when messages change
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 400) + 'px'
-    }
-  }, [problemStatement])
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [currentConversation?.messages])
 
-  const handleCalculate = async () => {
-    if (!problemStatement.trim()) {
-      alert('Please enter a problem statement')
-      return
+  // Focus input on mount
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  const handleNewChat = () => {
+    const newConversation: Conversation = {
+      id: `conv-${Date.now()}`,
+      title: 'New Conversation',
+      messages: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+    setConversations(prev => [newConversation, ...prev])
+    setCurrentConversationId(newConversation.id)
+  }
+
+  const handleSendMessage = async () => {
+    if (!inputMessage.trim() || isLoading) return
+
+    const userMessage: Message = {
+      id: `msg-${Date.now()}`,
+      role: 'user',
+      content: inputMessage,
+      timestamp: new Date(),
     }
 
+    // Create conversation if none exists
+    let convId = currentConversationId
+    if (!convId) {
+      const newConv: Conversation = {
+        id: `conv-${Date.now()}`,
+        title: inputMessage.slice(0, 50),
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      setConversations(prev => [newConv, ...prev])
+      convId = newConv.id
+      setCurrentConversationId(convId)
+    }
+
+    // Add user message
+    setConversations(prev =>
+      prev.map(conv =>
+        conv.id === convId
+          ? {
+              ...conv,
+              messages: [...conv.messages, userMessage],
+              title: conv.messages.length === 0 ? inputMessage.slice(0, 50) : conv.title,
+              updatedAt: new Date(),
+            }
+          : conv
+      )
+    )
+
+    setInputMessage('')
     setIsLoading(true)
+
     try {
-      const response = await fetch('/api/calculate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          problemStatement,
-          sessionsPerMonth,
-          queriesPerSession,
-          modelType,
-          avgInputTokens,
-          avgOutputTokens,
-        }),
+      const result = await callAIAgent(inputMessage, AGENT_ID, {
+        session_id: convId,
       })
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error('API Error:', response.status, errorText)
-        alert(`Error: ${response.status} - ${errorText}`)
-        return
+      const assistantMessage: Message = {
+        id: `msg-${Date.now()}-assistant`,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date(),
       }
 
-      const data: ApiResponse = await response.json()
+      if (result.success && result.response) {
+        // Parse response
+        const agentResponse: AgentResponse = result.response
 
-      if (data.success && data.data) {
-        setResults(data.data)
+        assistantMessage.content = agentResponse.result?.answer || 'No answer provided'
+        assistantMessage.response = agentResponse.result
+        assistantMessage.isError = agentResponse.status === 'error'
       } else {
-        alert('Error calculating credits: ' + (data.error || 'Unknown error'))
+        assistantMessage.content = result.error || 'Failed to get response'
+        assistantMessage.isError = true
       }
+
+      // Add assistant message
+      setConversations(prev =>
+        prev.map(conv =>
+          conv.id === convId
+            ? {
+                ...conv,
+                messages: [...conv.messages, assistantMessage],
+                updatedAt: new Date(),
+              }
+            : conv
+        )
+      )
     } catch (error) {
-      console.error('Fetch error:', error)
-      alert('Error calculating credits: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      const errorMessage: Message = {
+        id: `msg-${Date.now()}-error`,
+        role: 'assistant',
+        content: 'An error occurred while processing your request',
+        timestamp: new Date(),
+        isError: true,
+      }
+
+      setConversations(prev =>
+        prev.map(conv =>
+          conv.id === convId
+            ? {
+                ...conv,
+                messages: [...conv.messages, errorMessage],
+                updatedAt: new Date(),
+              }
+            : conv
+        )
+      )
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleCopyJSON = () => {
-    const json = JSON.stringify(results, null, 2)
-    navigator.clipboard.writeText(json)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      handleSendMessage()
+    }
   }
 
-  const handleExportPDF = () => {
-    if (!results) return
-    alert('PDF export feature coming soon')
-  }
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
 
-  const handleSendEmail = async () => {
-    if (!emailAddress.trim()) {
-      setEmailStatus({ success: false, message: 'Please enter an email address' })
-      return
-    }
+    setUploadProgress(0)
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(emailAddress)) {
-      setEmailStatus({ success: false, message: 'Please enter a valid email address' })
-      return
-    }
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
 
-    if (!problemStatement.trim()) {
-      setEmailStatus({ success: false, message: 'Please generate a calculation first' })
-      return
-    }
-
-    setIsSendingEmail(true)
-    setEmailStatus(null)
-
-    try {
-      const response = await fetch('/api/calculate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          problemStatement,
-          sessionsPerMonth,
-          queriesPerSession,
-          modelType,
-          avgInputTokens,
-          avgOutputTokens,
-          sendEmail: true,
-          recipientEmail: emailAddress,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error('API Error:', response.status, errorText)
-        setEmailStatus({ success: false, message: `Error: ${response.status}` })
-        return
+      // Validate PDF
+      if (file.type !== 'application/pdf') {
+        alert(`${file.name} is not a PDF file`)
+        continue
       }
 
-      const data = await response.json()
-
-      if (data.success) {
-        setEmailStatus({ success: true, message: `Email sent successfully to ${emailAddress}` })
-        setEmailAddress('')
-        setTimeout(() => {
-          setShowEmailModal(false)
-          setEmailStatus(null)
-        }, 2000)
-      } else {
-        setEmailStatus({ success: false, message: data.error || 'Failed to send email' })
+      // Create document entry
+      const newDoc: UploadedDocument = {
+        id: `doc-${Date.now()}-${i}`,
+        name: file.name,
+        uploadDate: new Date(),
+        status: 'processing',
+        size: file.size,
       }
-    } catch (error) {
-      setEmailStatus({
-        success: false,
-        message: error instanceof Error ? error.message : 'Error sending email',
-      })
-    } finally {
-      setIsSendingEmail(false)
+
+      setDocuments(prev => [newDoc, ...prev])
+
+      try {
+        // Upload to RAG knowledge base
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('rag_id', RAG_ID)
+
+        const response = await fetch('/api/rag/upload', {
+          method: 'POST',
+          body: formData,
+        })
+
+        const result = await response.json()
+
+        if (result.success) {
+          setDocuments(prev =>
+            prev.map(d =>
+              d.id === newDoc.id
+                ? { ...d, status: 'indexed' as const }
+                : d
+            )
+          )
+        } else {
+          setDocuments(prev =>
+            prev.map(d =>
+              d.id === newDoc.id
+                ? { ...d, status: 'failed' as const }
+                : d
+            )
+          )
+        }
+      } catch (error) {
+        setDocuments(prev =>
+          prev.map(d =>
+            d.id === newDoc.id
+              ? { ...d, status: 'failed' as const }
+              : d
+          )
+        )
+      }
+
+      setUploadProgress(((i + 1) / files.length) * 100)
     }
+
+    setTimeout(() => setUploadProgress(null), 1000)
   }
 
-  const monthlyTotal = results?.cost_breakdown.total_monthly ?? 0
-  const annualTotal = monthlyTotal * 12
+  const handleDeleteDocument = (docId: string) => {
+    setDocuments(prev => prev.filter(d => d.id !== docId))
+  }
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'))
+  }
+
+  const bgClass = theme === 'dark' ? 'bg-[#1a1a2e]' : 'bg-gray-50'
+  const cardBgClass = theme === 'dark' ? 'bg-[#16213e]' : 'bg-white'
+  const textClass = theme === 'dark' ? 'text-gray-100' : 'text-gray-900'
+  const mutedTextClass = theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+  const borderClass = theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
+  const accentClass = 'text-[#4361ee]'
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* Header */}
-      <header className="bg-slate-900 border-b border-slate-700 py-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-indigo-600 to-indigo-500 rounded-lg flex items-center justify-center">
-              <FiZap className="text-white text-xl" />
-            </div>
-            <h1 className="text-3xl font-bold text-white">Lyzr Credit Calculator</h1>
-          </div>
-          <p className="text-slate-400">Estimate your AI application costs and architecture requirements</p>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Left Column - Inputs */}
-          <div className="space-y-6">
-            {/* Problem Statement Card */}
-            <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-xl">
-              <h2 className="text-xl font-semibold text-white mb-4">Problem Statement</h2>
-              <label className="block text-sm text-slate-300 mb-2">Describe your use case</label>
-              <textarea
-                ref={textareaRef}
-                value={problemStatement}
-                onChange={(e) => {
-                  if (e.target.value.length <= 2000) {
-                    setProblemStatement(e.target.value)
-                  }
-                }}
-                placeholder="Customer support chatbot with FAQ knowledge base"
-                className="w-full min-h-24 px-4 py-3 bg-slate-700 text-white placeholder-slate-500 rounded-lg border border-slate-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none resize-none"
-              />
-              <div className="flex justify-between items-center mt-2">
-                <span className="text-xs text-slate-400">
-                  {problemStatement.length} / 2000 characters
-                </span>
+    <div className={cn('min-h-screen', bgClass, textClass)}>
+      {/* Sidebar */}
+      <div
+        className={cn(
+          'fixed left-0 top-0 h-full border-r transition-all duration-300 z-10',
+          borderClass,
+          cardBgClass,
+          sidebarCollapsed ? 'w-0' : 'w-60'
+        )}
+      >
+        {!sidebarCollapsed && (
+          <div className="flex flex-col h-full p-4">
+            {/* Logo */}
+            <div className="flex items-center gap-2 mb-6">
+              <div className="w-8 h-8 bg-gradient-to-br from-[#4361ee] to-[#3a51d6] rounded-lg flex items-center justify-center">
+                <BookOpen className="w-5 h-5 text-white" />
               </div>
+              <span className="font-bold text-lg">KnowledgeAI</span>
             </div>
 
-            {/* Usage Assumptions Panel */}
-            <div className="bg-slate-800 border border-slate-700 rounded-xl shadow-xl overflow-hidden">
-              <button
-                onClick={() => setIsCollapsed(!isCollapsed)}
-                className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-700 transition-colors"
-              >
-                <h2 className="text-xl font-semibold text-white">Usage Assumptions</h2>
-                {isCollapsed ? (
-                  <FiChevronDown className="text-slate-400 text-xl" />
-                ) : (
-                  <FiChevronUp className="text-slate-400 text-xl" />
-                )}
-              </button>
-
-              {!isCollapsed && (
-                <div className="px-6 py-4 space-y-6 border-t border-slate-700">
-                  {/* Sessions Per Month */}
-                  <InputField
-                    label="Sessions per Month"
-                    value={sessionsPerMonth}
-                    onChange={setSessionsPerMonth}
-                    min={100}
-                    max={10000}
-                    step={100}
-                    tooltip="Total number of user sessions per month"
-                  />
-
-                  {/* Queries Per Session */}
-                  <InputField
-                    label="Queries per Session"
-                    value={queriesPerSession}
-                    onChange={setQueriesPerSession}
-                    min={1}
-                    max={50}
-                    step={1}
-                    tooltip="Average number of queries per session"
-                  />
-
-                  {/* Model Selection */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Model Type
-                    </label>
-                    <select
-                      value={modelType}
-                      onChange={(e) => setModelType(e.target.value)}
-                      className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
-                    >
-                      <option>GPT-4.1</option>
-                      <option>GPT-5</option>
-                      <option>Mini</option>
-                      <option>Nano</option>
-                    </select>
-                  </div>
-
-                  {/* Average Input Tokens */}
-                  <InputField
-                    label="Average Input Tokens"
-                    value={avgInputTokens}
-                    onChange={setAvgInputTokens}
-                    min={100}
-                    max={5000}
-                    step={100}
-                    tooltip="Average number of input tokens per query"
-                  />
-
-                  {/* Average Output Tokens */}
-                  <InputField
-                    label="Average Output Tokens"
-                    value={avgOutputTokens}
-                    onChange={setAvgOutputTokens}
-                    min={100}
-                    max={5000}
-                    step={100}
-                    tooltip="Average number of output tokens per response"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Calculate Button */}
-            <button
-              onClick={handleCalculate}
-              disabled={isLoading}
-              className="w-full bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
+            {/* New Chat Button */}
+            <Button
+              onClick={handleNewChat}
+              className="w-full mb-4 bg-[#4361ee] hover:bg-[#3a51d6] text-white"
             >
-              {isLoading ? (
+              <Plus className="w-4 h-4 mr-2" />
+              New Chat
+            </Button>
+
+            {/* Conversation History */}
+            <ScrollArea className="flex-1 -mx-2 px-2">
+              <div className="space-y-2">
+                {conversations.map(conv => (
+                  <button
+                    key={conv.id}
+                    onClick={() => setCurrentConversationId(conv.id)}
+                    className={cn(
+                      'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors',
+                      currentConversationId === conv.id
+                        ? 'bg-[#4361ee] text-white'
+                        : theme === 'dark'
+                        ? 'hover:bg-gray-700'
+                        : 'hover:bg-gray-100'
+                    )}
+                  >
+                    <div className="flex items-start gap-2">
+                      <MessageSquare className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <span className="line-clamp-2">{conv.title}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </ScrollArea>
+
+            <Separator className="my-4" />
+
+            {/* Manage Knowledge Link */}
+            <Button
+              onClick={() => setShowKnowledgePanel(true)}
+              variant="ghost"
+              className="w-full justify-start mb-2"
+            >
+              <Database className="w-4 h-4 mr-2" />
+              Manage Knowledge
+            </Button>
+
+            {/* Theme Toggle */}
+            <Button onClick={toggleTheme} variant="ghost" className="w-full justify-start">
+              {theme === 'dark' ? (
                 <>
-                  <FiLoader className="animate-spin" />
-                  Calculating...
+                  <Sun className="w-4 h-4 mr-2" />
+                  Light Mode
                 </>
               ) : (
-                'Calculate Credits'
+                <>
+                  <Moon className="w-4 h-4 mr-2" />
+                  Dark Mode
+                </>
               )}
-            </button>
+            </Button>
           </div>
+        )}
+      </div>
 
-          {/* Right Column - Results */}
-          <div className="space-y-6">
-            {isLoading ? (
-              <SkeletonLoader />
-            ) : results ? (
-              <>
-                {/* Architecture Results Card */}
-                <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-xl">
-                  <h2 className="text-xl font-semibold text-white mb-6">Architecture Overview</h2>
+      {/* Sidebar Toggle */}
+      <button
+        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+        className={cn(
+          'fixed top-4 z-20 p-2 rounded-r-lg transition-all',
+          cardBgClass,
+          borderClass,
+          'border-l-0',
+          sidebarCollapsed ? 'left-0' : 'left-60'
+        )}
+      >
+        {sidebarCollapsed ? (
+          <ChevronRight className="w-5 h-5" />
+        ) : (
+          <ChevronLeft className="w-5 h-5" />
+        )}
+      </button>
 
-                  <div className="grid grid-cols-3 gap-4 mb-6">
-                    <ArchitectureMetric
-                      icon={<FiCpu className="text-2xl text-indigo-400" />}
-                      label="Agents"
-                      value={results.agents_count}
-                    />
-                    <ArchitectureMetric
-                      icon={<FiDatabase className="text-2xl text-green-400" />}
-                      label="Knowledge Bases"
-                      value={results.knowledge_bases_count}
-                    />
-                    <ArchitectureMetric
-                      icon={<FiTool className="text-2xl text-amber-400" />}
-                      label="Tools"
-                      value={results.tools_required}
-                    />
-                  </div>
-
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between items-start">
-                      <span className="text-slate-400">Memory Requirements:</span>
-                      <span className="text-white font-medium">{results.memory_requirements}</span>
-                    </div>
-                    <div className="flex justify-between items-start">
-                      <span className="text-slate-400">RAI Requirements:</span>
-                      <span className="text-white font-medium">{results.rai_requirements}</span>
-                    </div>
-                  </div>
-
-                  {/* Simple Flow Diagram */}
-                  <div className="mt-6 pt-6 border-t border-slate-700">
-                    <p className="text-xs text-slate-400 mb-4">Architecture Flow</p>
-                    <div className="flex items-center justify-between">
-                      <FlowBox label="Input" />
-                      <div className="flex-1 h-1 bg-gradient-to-r from-indigo-500 to-indigo-400 mx-2" />
-                      <FlowBox label="Processing" />
-                      <div className="flex-1 h-1 bg-gradient-to-r from-indigo-500 to-indigo-400 mx-2" />
-                      <FlowBox label="Output" />
-                    </div>
-                  </div>
+      {/* Main Chat Area */}
+      <div
+        className={cn(
+          'transition-all duration-300',
+          sidebarCollapsed ? 'ml-0' : 'ml-60'
+        )}
+      >
+        <div className="max-w-4xl mx-auto px-4 py-8 min-h-screen flex flex-col">
+          {/* Welcome Message or Chat */}
+          {!currentConversation || currentConversation.messages.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center max-w-2xl">
+                <div className="w-20 h-20 bg-gradient-to-br from-[#4361ee] to-[#3a51d6] rounded-2xl flex items-center justify-center mx-auto mb-6">
+                  <Sparkles className="w-10 h-10 text-white" />
                 </div>
+                <h1 className="text-4xl font-bold mb-4">
+                  Knowledge Search Assistant
+                </h1>
+                <p className={cn('text-lg mb-8', mutedTextClass)}>
+                  Ask questions about your documents and get instant, accurate answers with citations
+                </p>
 
-                {/* Cost Breakdown Table */}
-                <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl">
-                  <div className="px-6 py-4 bg-slate-700 border-b border-slate-600">
-                    <h2 className="text-xl font-semibold text-white">Cost Breakdown</h2>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-slate-700 sticky top-0">
-                        <tr className="border-b border-slate-600">
-                          <th className="px-6 py-3 text-left text-sm font-semibold text-slate-300">
-                            Component
-                          </th>
-                          <th className="px-6 py-3 text-right text-sm font-semibold text-slate-300">
-                            Cost
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="border-b border-slate-700 hover:bg-slate-700/50">
-                          <td className="px-6 py-3 text-sm text-slate-300">Creation Costs</td>
-                          <td className="px-6 py-3 text-right text-sm text-white font-medium">
-                            ${results.cost_breakdown.creation_costs.toFixed(2)}
-                          </td>
-                        </tr>
-                        <tr className="border-b border-slate-700 hover:bg-slate-700/50 bg-slate-700/20">
-                          <td className="px-6 py-3 text-sm text-slate-300">Retrieval Costs</td>
-                          <td className="px-6 py-3 text-right text-sm text-white font-medium">
-                            ${results.cost_breakdown.retrieval_costs.toFixed(2)}
-                          </td>
-                        </tr>
-                        <tr className="border-b border-slate-700 hover:bg-slate-700/50">
-                          <td className="px-6 py-3 text-sm text-slate-300">Model Costs</td>
-                          <td className="px-6 py-3 text-right text-sm text-white font-medium">
-                            ${results.cost_breakdown.model_costs.toFixed(2)}
-                          </td>
-                        </tr>
-                        <tr className="bg-indigo-950/50 border-t-2 border-indigo-600">
-                          <td className="px-6 py-4 text-sm font-semibold text-indigo-100">
-                            Monthly Total
-                          </td>
-                          <td className="px-6 py-4 text-right text-lg font-bold text-indigo-300">
-                            ${monthlyTotal.toFixed(2)}
-                          </td>
-                        </tr>
-                        <tr className="bg-slate-700/30">
-                          <td className="px-6 py-3 text-sm text-slate-400">Annual Projection</td>
-                          <td className="px-6 py-3 text-right text-sm font-semibold text-green-400">
-                            ${annualTotal.toFixed(2)}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Assumptions Summary */}
-                <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-xl">
-                  <h2 className="text-xl font-semibold text-white mb-4">Calculation Basis</h2>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <AssumptionItem label="Model" value={modelType} />
-                    <AssumptionItem label="Sessions/Month" value={sessionsPerMonth.toLocaleString()} />
-                    <AssumptionItem label="Queries/Session" value={queriesPerSession.toString()} />
-                    <AssumptionItem label="Input Tokens" value={avgInputTokens.toLocaleString()} />
-                    <AssumptionItem label="Output Tokens" value={avgOutputTokens.toLocaleString()} />
-                    <AssumptionItem
-                      label="Total Monthly Queries"
-                      value={(sessionsPerMonth * queriesPerSession).toLocaleString()}
-                    />
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleCalculate}
-                    className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-lg transition-colors"
-                  >
-                    Recalculate
-                  </button>
-                  <button
-                    onClick={handleExportPDF}
-                    className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
-                  >
-                    <FiDownload />
-                    Export PDF
-                  </button>
-                  <button
-                    onClick={handleCopyJSON}
-                    className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
-                  >
-                    {copied ? (
-                      <>
-                        <FiCheck />
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <FiCopy />
-                        Copy JSON
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setShowEmailModal(true)}
-                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
-                  >
-                    <FiMail />
-                    Send Email
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="bg-slate-800 border border-slate-700 rounded-xl p-12 shadow-xl flex items-center justify-center min-h-96">
-                <div className="text-center">
-                  <FiAlertCircle className="mx-auto text-4xl text-slate-500 mb-4" />
-                  <p className="text-slate-400">
-                    Enter your problem statement and click "Calculate Credits" to see results
-                  </p>
+                {/* Suggested Queries */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-8">
+                  {[
+                    'What are the main topics covered in the documents?',
+                    'Summarize the key findings from the research',
+                    'Find information about specific terminology',
+                    'Compare different sections of the documents',
+                  ].map((query, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setInputMessage(query)}
+                      className={cn(
+                        'px-4 py-3 rounded-lg text-sm text-left transition-colors border',
+                        borderClass,
+                        theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+                      )}
+                    >
+                      {query}
+                    </button>
+                  ))}
                 </div>
               </div>
-            )}
-          </div>
-        </div>
-      </main>
-
-      {/* Email Modal */}
-      {showEmailModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
-              <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-                <FiMail />
-                Send Results via Email
-              </h2>
-              <button
-                onClick={() => {
-                  setShowEmailModal(false)
-                  setEmailStatus(null)
-                }}
-                className="text-slate-400 hover:text-white transition-colors"
-              >
-                <FiX size={24} />
-              </button>
             </div>
-
-            <div className="px-6 py-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  value={emailAddress}
-                  onChange={(e) => {
-                    setEmailAddress(e.target.value)
-                    setEmailStatus(null)
-                  }}
-                  placeholder="your.email@example.com"
-                  disabled={isSendingEmail}
-                  className="w-full px-4 py-2 bg-slate-700 text-white placeholder-slate-500 rounded-lg border border-slate-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none disabled:opacity-50"
-                />
+          ) : (
+            <ScrollArea className="flex-1 -mx-4 px-4 mb-4">
+              <div className="space-y-6 py-4">
+                {currentConversation.messages.map(message => (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    theme={theme}
+                    showSources={showSources}
+                  />
+                ))}
+                {isLoading && (
+                  <div className="flex items-center gap-3 text-sm">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#4361ee]" />
+                    <span className={mutedTextClass}>Searching knowledge base...</span>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
               </div>
+            </ScrollArea>
+          )}
 
-              {emailStatus && (
-                <div
-                  className={`p-3 rounded-lg text-sm ${
-                    emailStatus.success
-                      ? 'bg-green-500/20 border border-green-500/50 text-green-400'
-                      : 'bg-red-500/20 border border-red-500/50 text-red-400'
-                  }`}
-                >
-                  {emailStatus.message}
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => {
-                    setShowEmailModal(false)
-                    setEmailStatus(null)
-                  }}
-                  disabled={isSendingEmail}
-                  className="flex-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white font-semibold py-2 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSendEmail}
-                  disabled={isSendingEmail || !emailAddress.trim()}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
-                >
-                  {isSendingEmail ? (
-                    <>
-                      <FiLoader className="animate-spin" />
-                      Sending...
-                    </>
-                  ) : (
-                    <>
-                      <FiMail />
-                      Send
-                    </>
+          {/* Input Area */}
+          <div className={cn('border-t pt-4', borderClass)}>
+            <div className="relative">
+              <Input
+                ref={inputRef}
+                value={inputMessage}
+                onChange={e => setInputMessage(e.target.value)}
+                onKeyDown={handleKeyPress}
+                placeholder="Ask anything about your documents..."
+                className={cn(
+                  'pr-24 h-12 text-base',
+                  theme === 'dark'
+                    ? 'bg-[#16213e] border-gray-700 focus:border-[#4361ee]'
+                    : 'bg-white border-gray-300 focus:border-[#4361ee]'
+                )}
+                disabled={isLoading}
+              />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                <kbd
+                  className={cn(
+                    'hidden sm:inline-block px-2 py-1 text-xs rounded border',
+                    mutedTextClass,
+                    borderClass
                   )}
-                </button>
+                >
+                  ⌘+Enter
+                </kbd>
+                <Button
+                  onClick={handleSendMessage}
+                  disabled={!inputMessage.trim() || isLoading}
+                  size="sm"
+                  className="bg-[#4361ee] hover:bg-[#3a51d6] text-white"
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
               </div>
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Knowledge Management Panel */}
+      {showKnowledgePanel && (
+        <KnowledgePanel
+          theme={theme}
+          documents={documents}
+          uploadProgress={uploadProgress}
+          onClose={() => setShowKnowledgePanel(false)}
+          onFileUpload={handleFileUpload}
+          onDeleteDocument={handleDeleteDocument}
+        />
       )}
     </div>
   )
 }
 
-// Input Field Component
-function InputField({
-  label,
-  value,
-  onChange,
-  min,
-  max,
-  step,
-  tooltip,
+// Message Bubble Component
+function MessageBubble({
+  message,
+  theme,
+  showSources,
 }: {
-  label: string
-  value: number
-  onChange: (value: number) => void
-  min: number
-  max: number
-  step: number
-  tooltip: string
+  message: Message
+  theme: 'dark' | 'light'
+  showSources: boolean
 }) {
-  const [localValue, setLocalValue] = useState(value.toString())
+  const [copied, setCopied] = useState(false)
+  const [expandedSources, setExpandedSources] = useState<Set<number>>(new Set())
 
-  useEffect(() => {
-    setLocalValue(value.toString())
-  }, [value])
+  const handleCopy = () => {
+    navigator.clipboard.writeText(message.content)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = e.target.value
-    setLocalValue(v)
-    if (v && !isNaN(Number(v))) {
-      const num = Math.max(min, Math.min(max, Number(v)))
-      onChange(num)
+  const toggleSourceExpansion = (index: number) => {
+    setExpandedSources(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(index)) {
+        newSet.delete(index)
+      } else {
+        newSet.add(index)
+      }
+      return newSet
+    })
+  }
+
+  if (message.role === 'user') {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[80%] bg-[#4361ee] text-white px-4 py-3 rounded-2xl rounded-tr-sm">
+          {message.content}
+        </div>
+      </div>
+    )
+  }
+
+  const cardBgClass = theme === 'dark' ? 'bg-[#16213e]' : 'bg-gray-100'
+  const mutedTextClass = theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+  const borderClass = theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
+
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[85%] space-y-3">
+        {/* Main Response */}
+        <div className={cn('px-4 py-3 rounded-2xl rounded-tl-sm', cardBgClass)}>
+          {message.isError ? (
+            <div className="flex items-start gap-2 text-red-400">
+              <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+              <span>{message.content}</span>
+            </div>
+          ) : (
+            <div className="prose prose-sm max-w-none dark:prose-invert">
+              {message.content}
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          {!message.isError && (
+            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-700">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCopy}
+                className="h-7 text-xs"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3 h-3 mr-1" />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3 mr-1" />
+                    Copy
+                  </>
+                )}
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 text-xs">
+                <ThumbsUp className="w-3 h-3 mr-1" />
+                Helpful
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 text-xs">
+                <ThumbsDown className="w-3 h-3 mr-1" />
+                Not Helpful
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Sources */}
+        {showSources && message.response?.sources && message.response.sources.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs font-semibold">
+              <FileText className="w-3 h-3" />
+              <span>Sources ({message.response.sources.length})</span>
+            </div>
+            {message.response.sources.map((source, idx) => (
+              <SourceCard
+                key={idx}
+                source={source}
+                index={idx}
+                theme={theme}
+                isExpanded={expandedSources.has(idx)}
+                onToggle={() => toggleSourceExpansion(idx)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Confidence & Metadata */}
+        {message.response && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {message.response.confidence !== undefined && (
+              <Badge variant="secondary" className="font-normal">
+                Confidence: {(message.response.confidence * 100).toFixed(0)}%
+              </Badge>
+            )}
+          </div>
+        )}
+
+        {/* Follow-up Suggestions */}
+        {message.response?.follow_up_suggestions && message.response.follow_up_suggestions.length > 0 && (
+          <div className="space-y-2">
+            <div className={cn('text-xs font-semibold', mutedTextClass)}>
+              Suggested follow-ups:
+            </div>
+            <div className="space-y-1">
+              {message.response.follow_up_suggestions.map((suggestion, idx) => (
+                <button
+                  key={idx}
+                  className={cn(
+                    'block w-full text-left px-3 py-2 rounded-lg text-sm border transition-colors',
+                    borderClass,
+                    theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+                  )}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Source Card Component
+function SourceCard({
+  source,
+  index,
+  theme,
+  isExpanded,
+  onToggle,
+}: {
+  source: Source
+  index: number
+  theme: 'dark' | 'light'
+  isExpanded: boolean
+  onToggle: () => void
+}) {
+  const cardBgClass = theme === 'dark' ? 'bg-[#0f1729]' : 'bg-white'
+  const borderClass = theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
+
+  return (
+    <div className={cn('border rounded-lg p-3', cardBgClass, borderClass)}>
+      <button onClick={onToggle} className="w-full text-left">
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded bg-[#4361ee] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+            {index + 1}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <File className="w-3 h-3 flex-shrink-0" />
+              <span className="text-sm font-medium truncate">
+                {source.document || 'Unknown Document'}
+              </span>
+              {source.page && (
+                <Badge variant="outline" className="text-xs">
+                  Page {source.page}
+                </Badge>
+              )}
+            </div>
+            {source.excerpt && (
+              <p className={cn('text-xs', isExpanded ? '' : 'line-clamp-2')}>
+                {source.excerpt}
+              </p>
+            )}
+          </div>
+        </div>
+      </button>
+    </div>
+  )
+}
+
+// Knowledge Management Panel Component
+function KnowledgePanel({
+  theme,
+  documents,
+  uploadProgress,
+  onClose,
+  onFileUpload,
+  onDeleteDocument,
+}: {
+  theme: 'dark' | 'light'
+  documents: UploadedDocument[]
+  uploadProgress: number | null
+  onClose: () => void
+  onFileUpload: (files: FileList | null) => void
+  onDeleteDocument: (id: string) => void
+}) {
+  const [dragActive, setDragActive] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true)
+    } else if (e.type === 'dragleave') {
+      setDragActive(false)
     }
   }
 
-  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const num = Number(e.target.value)
-    onChange(num)
-    setLocalValue(num.toString())
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      onFileUpload(e.dataTransfer.files)
+    }
   }
 
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onFileUpload(e.target.files)
+    }
+  }
+
+  const bgClass = theme === 'dark' ? 'bg-[#1a1a2e]' : 'bg-white'
+  const cardBgClass = theme === 'dark' ? 'bg-[#16213e]' : 'bg-gray-50'
+  const textClass = theme === 'dark' ? 'text-gray-100' : 'text-gray-900'
+  const mutedTextClass = theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+  const borderClass = theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
+
+  const totalSize = documents.reduce((acc, doc) => acc + (doc.size || 0), 0)
+  const storageLimit = 1024 * 1024 * 1024 // 1GB
+  const storagePercentage = (totalSize / storageLimit) * 100
+
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-2">
-        <label className="block text-sm font-medium text-slate-300">{label}</label>
-        <div className="group relative cursor-help">
-          <FiAlertCircle className="text-slate-500 text-sm" />
-          <div className="absolute bottom-full left-0 mb-2 px-3 py-2 bg-slate-950 border border-slate-700 rounded text-xs text-slate-300 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-            {tooltip}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <Card className={cn('w-full max-w-4xl max-h-[90vh] flex flex-col', bgClass, textClass)}>
+        <CardHeader className={cn('border-b', borderClass)}>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-2xl">Knowledge Base Management</CardTitle>
+              <CardDescription className={mutedTextClass}>
+                Upload and manage your PDF documents
+              </CardDescription>
+            </div>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
           </div>
-        </div>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={handleSliderChange}
-        className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 mb-2"
-      />
-      <input
-        type="number"
-        value={localValue}
-        onChange={handleInputChange}
-        min={min}
-        max={max}
-        step={step}
-        className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-sm"
-      />
-    </div>
-  )
-}
+        </CardHeader>
 
-// Architecture Metric Component
-function ArchitectureMetric({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: number
-}) {
-  return (
-    <div className="bg-slate-700 rounded-lg p-4 text-center border border-slate-600">
-      <div className="flex justify-center mb-2">{icon}</div>
-      <p className="text-slate-400 text-xs mb-1">{label}</p>
-      <p className="text-2xl font-bold text-white">{value}</p>
-    </div>
-  )
-}
+        <CardContent className="flex-1 overflow-auto p-6">
+          {/* Upload Zone */}
+          <div
+            onDragEnter={handleDrag}
+            onDragOver={handleDrag}
+            onDragLeave={handleDrag}
+            onDrop={handleDrop}
+            className={cn(
+              'border-2 border-dashed rounded-lg p-12 text-center transition-colors mb-6',
+              dragActive ? 'border-[#4361ee] bg-[#4361ee]/10' : borderClass,
+              cardBgClass
+            )}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf"
+              multiple
+              onChange={handleFileInput}
+              className="hidden"
+            />
+            <Upload className={cn('w-12 h-12 mx-auto mb-4', mutedTextClass)} />
+            <h3 className="text-lg font-semibold mb-2">
+              Drop PDF files here or click to browse
+            </h3>
+            <p className={cn('text-sm mb-4', mutedTextClass)}>
+              Supports PDF documents only. Upload multiple files at once.
+            </p>
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              className="bg-[#4361ee] hover:bg-[#3a51d6] text-white"
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Select Files
+            </Button>
 
-// Flow Box Component
-function FlowBox({ label }: { label: string }) {
-  return (
-    <div className="bg-slate-700 border border-indigo-500 rounded px-3 py-2 text-xs font-medium text-slate-200 flex-shrink-0">
-      {label}
-    </div>
-  )
-}
+            {uploadProgress !== null && (
+              <div className="mt-4">
+                <Progress value={uploadProgress} className="h-2" />
+                <p className={cn('text-xs mt-2', mutedTextClass)}>
+                  Uploading... {uploadProgress.toFixed(0)}%
+                </p>
+              </div>
+            )}
+          </div>
 
-// Assumption Item Component
-function AssumptionItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="bg-slate-700/30 rounded p-3 border border-slate-600">
-      <p className="text-xs text-slate-400 mb-1">{label}</p>
-      <p className="text-white font-semibold">{value}</p>
-    </div>
-  )
-}
+          {/* Storage Indicator */}
+          <div className={cn('rounded-lg p-4 mb-6', cardBgClass)}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium">Storage Used</span>
+              <span className="text-sm">
+                {(totalSize / 1024 / 1024).toFixed(2)} MB / {(storageLimit / 1024 / 1024).toFixed(0)} MB
+              </span>
+            </div>
+            <Progress value={storagePercentage} className="h-2" />
+          </div>
 
-// Skeleton Loader Component
-function SkeletonLoader() {
-  return (
-    <div className="space-y-6 animate-pulse">
-      <div className="bg-slate-700 border border-slate-700 rounded-xl p-6 h-48" />
-      <div className="bg-slate-700 border border-slate-700 rounded-xl p-6 h-64" />
-      <div className="bg-slate-700 border border-slate-700 rounded-xl p-6 h-40" />
-      <div className="bg-slate-700 border border-slate-700 rounded-xl p-6 h-32" />
+          {/* Documents List */}
+          <div className="space-y-3">
+            <h3 className="font-semibold flex items-center gap-2">
+              <File className="w-4 h-4" />
+              Documents ({documents.length})
+            </h3>
+
+            {documents.length === 0 ? (
+              <div className={cn('text-center py-12 rounded-lg', cardBgClass)}>
+                <FileText className={cn('w-12 h-12 mx-auto mb-3', mutedTextClass)} />
+                <p className={mutedTextClass}>No documents uploaded yet</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {documents.map(doc => (
+                  <div
+                    key={doc.id}
+                    className={cn(
+                      'flex items-center justify-between p-4 rounded-lg border',
+                      cardBgClass,
+                      borderClass
+                    )}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <FileText className="w-5 h-5 flex-shrink-0 text-red-500" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{doc.name}</p>
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className={mutedTextClass}>
+                            {doc.uploadDate.toLocaleDateString()}
+                          </span>
+                          {doc.size && (
+                            <span className={mutedTextClass}>
+                              {(doc.size / 1024).toFixed(2)} KB
+                            </span>
+                          )}
+                          <Badge
+                            variant={
+                              doc.status === 'indexed'
+                                ? 'default'
+                                : doc.status === 'processing'
+                                ? 'secondary'
+                                : 'destructive'
+                            }
+                            className="text-xs"
+                          >
+                            {doc.status === 'indexed' && 'Indexed'}
+                            {doc.status === 'processing' && (
+                              <>
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                Processing
+                              </>
+                            )}
+                            {doc.status === 'failed' && 'Failed'}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onDeleteDocument(doc.id)}
+                      className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
